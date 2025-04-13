@@ -1,8 +1,11 @@
 package database
 
 import (
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -13,11 +16,48 @@ type Database struct {
 	Tables map[string]*Table
 }
 
-func NewDatabase(name string) *Database {
-	return &Database{
+func NewDatabase(name string) (*Database, error) {
+	db, err := loadFromFileGob(name)
+	if err == nil {
+		return db, nil
+	}
+
+	// Create new database if loading fails
+	db = &Database{
 		Name:   name,
 		Tables: make(map[string]*Table),
 	}
+
+	if err := db.saveToFileGob(); err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}
+
+func (db *Database) saveToFileGob() error {
+	file, err := os.Create(db.Name + ".gob")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	encoder := gob.NewEncoder(file)
+	return encoder.Encode(db)
+}
+
+func loadFromFileGob(name string) (*Database, error) {
+	file, err := os.Open(name + ".gob")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var db Database
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&db); err != nil {
+		return nil, err
+	}
+	return &db, nil
 }
 
 // Execute processes SQL commands
@@ -27,6 +67,7 @@ func (db *Database) Execute(sql string) (string, error) {
 	insertRegex := regexp.MustCompile(`(?i)^INSERT INTO (\w+) \((.+)\) VALUES \((.+)\)$`)
 	selectRegex := regexp.MustCompile(`(?i)^SELECT (.+) FROM (\w+)(?: WHERE (.+))?$`)
 	deleteRegex := regexp.MustCompile(`(?i)^DELETE FROM (\w+)(?: WHERE (.+))?$`)
+	updateRegex := regexp.MustCompile(`(?i)^UPDATE (\w+) SET (.+) WHERE (.+)$`)
 
 	switch {
 	case strings.HasPrefix(strings.ToUpper(sql), "CREATE TABLE"):
@@ -59,6 +100,19 @@ func (db *Database) Execute(sql string) (string, error) {
 		values := strings.Split(matches[3], ",")
 		return db.Insert(tableName, columns, values)
 
+	case strings.HasPrefix(strings.ToUpper(sql), "UPDATE"):
+		matches := updateRegex.FindStringSubmatch(sql)
+		if len(matches) < 4 {
+			return "", fmt.Errorf("invalid UPDATE syntax")
+		}
+		tableName := matches[1]
+		columns := strings.Split(matches[2], ",")
+		values := strings.Split(matches[3], ",")
+		var whereClause string
+		if len(matches) > 3 {
+			whereClause = matches[3]
+		}
+		return db.Update(tableName, columns, values, whereClause)
 	case strings.HasPrefix(strings.ToUpper(sql), "SELECT"):
 		matches := selectRegex.FindStringSubmatch(sql)
 		if len(matches) < 3 {
@@ -78,42 +132,54 @@ func (db *Database) Execute(sql string) (string, error) {
 }
 
 func (db *Database) CreateTable(name string, columnDefs []string) (string, error) {
-	if _, exists := db.Tables[name]; exists {
+	database, err := loadFromFileGob(db.Name)
+	if err != nil {
+		return "", err
+	}
+	if _, exists := database.Tables[name]; exists {
 		return "", fmt.Errorf("table %s already exists", name)
 	}
 
-	table := &Table{Name: name}
+	table := &Table{
+		Name:    name,
+		Columns: []Column{},
+		Rows:    []Row{},
+	}
+
 	for _, def := range columnDefs {
-		parts := strings.Split(strings.TrimSpace(def), " ")
+		parts := strings.Fields(strings.TrimSpace(def))
 		if len(parts) < 2 {
 			return "", fmt.Errorf("invalid column definition: %s", def)
 		}
 
-		name := strings.TrimSpace(parts[0])
-		typeStr := ColumnType(strings.ToUpper(strings.TrimSpace(parts[1])))
+		colName := parts[0]
+		colType := ColumnType(strings.ToUpper(parts[1]))
 
-		if !isValidColumnType(typeStr) {
-			fmt.Println("Invalid column type:", typeStr)
-			return "", fmt.Errorf("invalid column type: %s", typeStr)
-		}
-
-		var table struct {
-			Columns []Column
+		if !isValidColumnType(colType) {
+			return "", fmt.Errorf("invalid column type: %s", colType)
 		}
 
 		table.Columns = append(table.Columns, Column{
-			Name: name,
-			Type: typeStr,
+			Name: colName,
+			Type: colType,
 		})
 	}
 
-	db.Tables[name] = table
+	database.Tables[name] = table
+	err = database.saveToFileGob()
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("Table %s created", name), nil
 }
 
 // Insert adds a new row to a table
 func (db *Database) Insert(tableName string, columns []string, values []string) (string, error) {
-	table, exists := db.Tables[tableName]
+	database, err := loadFromFileGob(db.Name)
+	if err != nil {
+		return "", err
+	}
+	table, exists := database.Tables[tableName]
 	if !exists {
 		return "", fmt.Errorf("table %s does not exist", tableName)
 	}
@@ -141,6 +207,7 @@ func (db *Database) Insert(tableName string, columns []string, values []string) 
 		case COLUMN_TYPE_INT:
 			var num int64
 			_, err := fmt.Sscanf(val, "%d", &num)
+			fmt.Println(num)
 			if err != nil {
 				return "", fmt.Errorf("invalid integer value for column %s", col)
 			}
@@ -155,19 +222,19 @@ func (db *Database) Insert(tableName string, columns []string, values []string) 
 			}
 			row[col] = num
 		case COLUMN_TYPE_BOOL:
-			var num bool
-			_, err := fmt.Sscanf(val, "%t", &num)
+			var boolean bool
+			_, err := fmt.Sscanf(val, "%t", &boolean)
 			if err != nil {
 				return "", fmt.Errorf("invalid boolean value for column %s", col)
 			}
-			row[col] = num
+			row[col] = boolean
 		case COLUMN_TYPE_DATE:
-			var num time.Time
-			_, err := fmt.Sscanf(val, "%s", &num)
+			const layout = "2006-01-02"
+			parsed_Date, err := time.Parse(layout, val)
 			if err != nil {
 				return "", fmt.Errorf("invalid date value for column %s", col)
 			}
-			row[col] = num
+			row[col] = parsed_Date
 		case COLUMN_TYPE_PRIMARY_KEY:
 			row[col] = val // TODO: validate primary key
 		default:
@@ -178,12 +245,20 @@ func (db *Database) Insert(tableName string, columns []string, values []string) 
 	}
 
 	table.Rows = append(table.Rows, row)
+	err = database.saveToFileGob()
+	if err != nil {
+		return "", err
+	}
 	return "1 row inserted", nil
 }
 
 // Delete removes a row from a table
 func (db *Database) Delete(tableName string, whereClause string) (string, error) {
-	table, exists := db.Tables[tableName]
+	database, err := loadFromFileGob(db.Name)
+	if err != nil {
+		return "", err
+	}
+	table, exists := database.Tables[tableName]
 	if !exists {
 		return "", fmt.Errorf("table %s does not exist", tableName)
 	} else if len(table.Rows) == 0 {
@@ -191,21 +266,28 @@ func (db *Database) Delete(tableName string, whereClause string) (string, error)
 	}
 	var results []Row
 	for _, row := range table.Rows {
-		if whereClause == "" || db.evaluateWhere(row, whereClause) {
+		if whereClause == "" || !db.evaluateWhere(row, whereClause) {
 			results = append(results, row)
 		}
 	}
 	table.Rows = results
+	err = database.saveToFileGob()
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("%d rows deleted", len(results)), nil
 }
 
 // Select retrieves data from a table
 func (db *Database) Select(tableName string, columns []string, whereClause string) (string, error) {
-	table, exists := db.Tables[tableName]
+	database, err := loadFromFileGob(db.Name)
+	if err != nil {
+		return "", err
+	}
+	table, exists := database.Tables[tableName]
 	if !exists {
 		return "", fmt.Errorf("table %s does not exist", tableName)
 	}
-
 	var results []Row
 	for _, row := range table.Rows {
 		if whereClause == "" || db.evaluateWhere(row, whereClause) {
@@ -213,9 +295,7 @@ func (db *Database) Select(tableName string, columns []string, whereClause strin
 			for _, col := range columns {
 				col = strings.TrimSpace(col)
 				if col == "*" {
-					for k, v := range row {
-						resultRow[k] = v
-					}
+					maps.Copy(resultRow, row)
 				} else if val, exists := row[col]; exists {
 					resultRow[col] = val
 				} else {
@@ -240,15 +320,34 @@ func (db *Database) evaluateWhere(row Row, whereClause string) bool {
 	if len(parts) != 2 {
 		return false
 	}
-
 	col := strings.TrimSpace(parts[0])
 	val := strings.TrimSpace(parts[1])
 	val = strings.Trim(val, "'\"")
-
 	rowVal, exists := row[col]
 	if !exists {
 		return false
 	}
-
 	return fmt.Sprint(rowVal) == val
+}
+
+func (db *Database) Update(tableName string, columns []string, values []string, whereClause string) (string, error) {
+	database, err := loadFromFileGob(db.Name)
+	if err != nil {
+		return "", err
+	}
+	table, exists := database.Tables[tableName]
+	if !exists {
+		return "", fmt.Errorf("table %s does not exist", tableName)
+	}
+	for _, row := range table.Rows {
+		if db.evaluateWhere(row, whereClause) {
+			row.Update(columns, values)
+			err := database.saveToFileGob()
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("%d rows updated", 1), nil
+		}
+	}
+	return "", fmt.Errorf("no rows found")
 }
