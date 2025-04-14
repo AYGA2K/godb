@@ -106,13 +106,9 @@ func (db *Database) Execute(sql string) (string, error) {
 			return "", fmt.Errorf("invalid UPDATE syntax")
 		}
 		tableName := matches[1]
-		columns := strings.Split(matches[2], ",")
-		values := strings.Split(matches[3], ",")
-		var whereClause string
-		if len(matches) > 3 {
-			whereClause = matches[3]
-		}
-		return db.Update(tableName, columns, values, whereClause)
+		setClause := matches[2]
+		whereClause := matches[3]
+		return db.Update(tableName, setClause, whereClause)
 	case strings.HasPrefix(strings.ToUpper(sql), "SELECT"):
 		matches := selectRegex.FindStringSubmatch(sql)
 		if len(matches) < 3 {
@@ -203,45 +199,11 @@ func (db *Database) Insert(tableName string, columns []string, values []string) 
 		}
 
 		// Simple type conversion
-		switch colType {
-		case COLUMN_TYPE_INT:
-			var num int64
-			_, err := fmt.Sscanf(val, "%d", &num)
-			fmt.Println(num)
-			if err != nil {
-				return "", fmt.Errorf("invalid integer value for column %s", col)
-			}
-			row[col] = num
-		case COLUMN_TYPE_STRING, COLUMN_TYPE_TEXT:
-			row[col] = strings.Trim(val, "'\"")
-		case COLUMN_TYPE_FLOAT:
-			var num float64
-			_, err := fmt.Sscanf(val, "%f", &num)
-			if err != nil {
-				return "", fmt.Errorf("invalid float value for column %s", col)
-			}
-			row[col] = num
-		case COLUMN_TYPE_BOOL:
-			var boolean bool
-			_, err := fmt.Sscanf(val, "%t", &boolean)
-			if err != nil {
-				return "", fmt.Errorf("invalid boolean value for column %s", col)
-			}
-			row[col] = boolean
-		case COLUMN_TYPE_DATE:
-			const layout = "2006-01-02"
-			parsed_Date, err := time.Parse(layout, val)
-			if err != nil {
-				return "", fmt.Errorf("invalid date value for column %s", col)
-			}
-			row[col] = parsed_Date
-		case COLUMN_TYPE_PRIMARY_KEY:
-			row[col] = val // TODO: validate primary key
-		default:
-			row[col] = val
-			fmt.Println("Invalid column type:", colType)
-			return "", fmt.Errorf("invalid column type: %s", colType)
+		convertedVal, err := columnTypeConversion(colType, val)
+		if err != nil {
+			return "", err
 		}
+		row[col] = convertedVal
 	}
 
 	table.Rows = append(table.Rows, row)
@@ -330,7 +292,7 @@ func (db *Database) evaluateWhere(row Row, whereClause string) bool {
 	return fmt.Sprint(rowVal) == val
 }
 
-func (db *Database) Update(tableName string, columns []string, values []string, whereClause string) (string, error) {
+func (db *Database) Update(tableName string, setClause string, whereClause string) (string, error) {
 	database, err := loadFromFileGob(db.Name)
 	if err != nil {
 		return "", err
@@ -339,15 +301,93 @@ func (db *Database) Update(tableName string, columns []string, values []string, 
 	if !exists {
 		return "", fmt.Errorf("table %s does not exist", tableName)
 	}
-	for _, row := range table.Rows {
+	if len(table.Rows) == 0 {
+		return "", fmt.Errorf("table %s is empty", tableName)
+	}
+	var rowCount int
+	var updatedIndices []int
+	for i, row := range table.Rows {
 		if db.evaluateWhere(row, whereClause) {
-			row.Update(columns, values)
-			err := database.saveToFileGob()
-			if err != nil {
-				return "", err
-			}
-			return fmt.Sprintf("%d rows updated", 1), nil
+			updatedIndices = append(updatedIndices, i)
+			rowCount++
 		}
 	}
-	return "", fmt.Errorf("no rows found")
+	if rowCount == 0 {
+		return "", fmt.Errorf("no rows found")
+	}
+	setParts := strings.SplitSeq(setClause, ",")
+	for setPart := range setParts {
+		parts := strings.Split(setPart, "=")
+		if len(parts) != 2 {
+			return "", fmt.Errorf("invalid set clause: %s", setPart)
+		}
+		col := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		// find column type
+		var colType ColumnType
+		for _, column := range table.Columns {
+			if column.Name == col {
+				colType = column.Type
+				break
+			}
+		}
+		if !isValidColumnType(colType) {
+			return "", fmt.Errorf("invalid column type: %s", colType)
+		}
+
+		// simple type conversion
+		convertedVal, err := columnTypeConversion(colType, val)
+		if err != nil {
+			return "", err
+		}
+		for _, i := range updatedIndices {
+			table.Rows[i][col] = convertedVal
+		}
+	}
+	err = database.saveToFileGob()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d rows updated", rowCount), nil
+}
+
+func columnTypeConversion(colType ColumnType, val string) (any, error) {
+	switch colType {
+	case COLUMN_TYPE_INT:
+		var num int64
+		_, err := fmt.Sscanf(val, "%d", &num)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
+		}
+		return num, nil
+	case COLUMN_TYPE_STRING:
+		return strings.Trim(val, "'\""), nil
+	case COLUMN_TYPE_TEXT:
+		return strings.Trim(val, "'\""), nil
+	case COLUMN_TYPE_FLOAT:
+		var num float64
+		_, err := fmt.Sscanf(val, "%f", &num)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
+		}
+		return num, nil
+	case COLUMN_TYPE_BOOL:
+		var boolean bool
+		_, err := fmt.Sscanf(val, "%t", &boolean)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
+		}
+		return boolean, nil
+	case COLUMN_TYPE_DATE:
+		const layout = "2006-01-02"
+		parsed_Date, err := time.Parse(layout, val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
+		}
+		return parsed_Date, nil
+	case COLUMN_TYPE_PRIMARY_KEY:
+		return val, nil // TODO: validate primary key
+	default:
+		return val, nil
+	}
 }
