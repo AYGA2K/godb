@@ -11,16 +11,28 @@ type Column struct {
 	Name string
 	Type ColumnType
 }
+
 type ColumnType string
 
 const (
-	COLUMN_TYPE_INT         ColumnType = "INT"
-	COLUMN_TYPE_STRING      ColumnType = "STRING"
-	COLUMN_TYPE_TEXT        ColumnType = "TEXT"
-	COLUMN_TYPE_FLOAT       ColumnType = "FLOAT"
-	COLUMN_TYPE_BOOL        ColumnType = "BOOL"
-	COLUMN_TYPE_DATE        ColumnType = "DATE"
-	COLUMN_TYPE_PRIMARY_KEY ColumnType = "PRIMARYKEY"
+	COLUMN_TYPE_INT     ColumnType = "INT"
+	COLUMN_TYPE_DOUBLE  ColumnType = "DOUBLE"
+	COLUMN_TYPE_FLOAT   ColumnType = "FLOAT"
+	COLUMN_TYPE_VARCHAR ColumnType = "VARCHAR"
+	COLUMN_TYPE_BOOL    ColumnType = "BOOL"
+	COLUMN_TYPE_DATE    ColumnType = "DATE"
+	COLUMN_TYPE_ENUM    ColumnType = "ENUM"
+)
+
+type ColumnConstraint string
+
+const (
+	COLUMN_CONSTRAINT_NULL           ColumnConstraint = "NULL"
+	COLUMN_CONSTRAINT_NOT_NULL       ColumnConstraint = "NOT NULL"
+	COLUMN_CONSTRAINT_UNIQUE         ColumnConstraint = "UNIQUE"
+	COLUMN_CONSTRAINT_PRIMARY_KEY    ColumnConstraint = "PRIMARY KEY"
+	COLUMN_CONSTRAINT_FOREIGN_KEY    ColumnConstraint = "FOREIGN KEY"
+	COLUMN_CONSTRAINT_AUTO_INCREMENT ColumnConstraint = "AUTO_INCREMENT"
 )
 
 // Table represents a database table
@@ -44,26 +56,15 @@ func init() {
 func isValidColumnType(t ColumnType) bool {
 	switch t {
 	case COLUMN_TYPE_INT,
-		COLUMN_TYPE_STRING,
-		COLUMN_TYPE_TEXT,
+		COLUMN_TYPE_VARCHAR,
+		COLUMN_TYPE_DOUBLE,
 		COLUMN_TYPE_FLOAT,
 		COLUMN_TYPE_BOOL,
 		COLUMN_TYPE_DATE,
-		COLUMN_TYPE_PRIMARY_KEY:
+		COLUMN_TYPE_ENUM:
 		return true
 	default:
 		return false
-	}
-}
-
-func (r Row) Update(columns []string, values []string) {
-	if len(columns) != len(values) {
-		return
-	}
-	for i, col := range columns {
-		col = strings.TrimSpace(col)
-		val := strings.TrimSpace(values[i])
-		r[col] = val
 	}
 }
 

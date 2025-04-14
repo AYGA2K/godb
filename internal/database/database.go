@@ -360,12 +360,17 @@ func columnTypeConversion(colType ColumnType, val string) (any, error) {
 			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
 		}
 		return num, nil
-	case COLUMN_TYPE_STRING:
+	case COLUMN_TYPE_VARCHAR:
 		return strings.Trim(val, "'\""), nil
-	case COLUMN_TYPE_TEXT:
-		return strings.Trim(val, "'\""), nil
-	case COLUMN_TYPE_FLOAT:
+	case COLUMN_TYPE_DOUBLE:
 		var num float64
+		_, err := fmt.Sscanf(val, "%f", &num)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
+		}
+		return num, nil
+	case COLUMN_TYPE_FLOAT:
+		var num float32
 		_, err := fmt.Sscanf(val, "%f", &num)
 		if err != nil {
 			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
