@@ -68,6 +68,7 @@ func (db *Database) Execute(sql string) (string, error) {
 	selectRegex := regexp.MustCompile(`(?i)^SELECT (.+) FROM (\w+)(?: WHERE (.+))?$`)
 	deleteRegex := regexp.MustCompile(`(?i)^DELETE FROM (\w+)(?: WHERE (.+))?$`)
 	updateRegex := regexp.MustCompile(`(?i)^UPDATE (\w+) SET (.+) WHERE (.+)$`)
+	dropTableRegex := regexp.MustCompile(`(?i)^DROP TABLE (\w+)$`)
 
 	switch {
 	case strings.HasPrefix(strings.ToUpper(sql), "CREATE TABLE"):
@@ -78,6 +79,13 @@ func (db *Database) Execute(sql string) (string, error) {
 		tableName := matches[1]
 		columns := strings.Split(matches[2], ",")
 		return db.CreateTable(tableName, columns)
+	case strings.HasPrefix(strings.ToUpper(sql), "DROP TABLE"):
+		matches := dropTableRegex.FindStringSubmatch(sql)
+		if len(matches) < 2 {
+			return "", fmt.Errorf("invalid DROP TABLE syntax")
+		}
+		tableName := matches[1]
+		return db.DropTable(tableName)
 	case strings.HasPrefix(strings.ToUpper(sql), "DELETE FROM"):
 		matches := deleteRegex.FindStringSubmatch(sql)
 		if len(matches) < 3 {
@@ -167,6 +175,19 @@ func (db *Database) CreateTable(name string, columnDefs []string) (string, error
 		return "", err
 	}
 	return fmt.Sprintf("Table %s created", name), nil
+}
+
+func (db *Database) DropTable(name string) (string, error) {
+	database, err := loadFromFileGob(db.Name)
+	if err != nil {
+		return "", err
+	}
+	delete(database.Tables, name)
+	err = database.saveToFileGob()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Table %s dropped", name), nil
 }
 
 // Insert adds a new row to a table

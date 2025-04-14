@@ -131,3 +131,27 @@ func TestUpdate(t *testing.T) {
 		t.Errorf("Expected Charlie for id 1 and Bob to remain unchanged, got: %s", selectRes)
 	}
 }
+
+func TestDropTable(t *testing.T) {
+	defer cleanupTestDB()
+
+	db, err := database.NewDatabase("testdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (1, 'Alice')")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (2, 'Bob')")
+
+	res, err := db.Execute("DROP TABLE users")
+	if err != nil {
+		t.Fatalf("Drop table error: %v", err)
+	}
+	if res != "Table users dropped" {
+		t.Errorf("Unexpected drop table result: %s", res)
+	}
+	_, exists := db.Tables["users"]
+	if exists {
+		t.Errorf("Table users still exists")
+	}
+}
