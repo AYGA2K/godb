@@ -8,8 +8,32 @@ import (
 
 // Column represents a table column
 type Column struct {
-	Name string
-	Type ColumnType
+	Name        string
+	Type        ColumnType
+	Constraints []ColumnConstraint
+}
+
+func parseColumnDef(columnDef string) (Column, error) {
+	parts := strings.Fields(strings.TrimSpace(columnDef))
+	if len(parts) < 2 {
+		return Column{}, fmt.Errorf("invalid column definition")
+	}
+
+	colName := parts[0]
+	colType := ColumnType(strings.ToUpper(parts[1]))
+	if len(parts) > 2 {
+		for _, constraint := range parts[2:] {
+			if constraint == "" {
+				break
+			}
+			// TODO: add constraint parsing
+		}
+	}
+	column := Column{
+		Name: colName,
+		Type: colType,
+	}
+	return column, nil
 }
 
 type ColumnType string
@@ -62,6 +86,20 @@ func isValidColumnType(t ColumnType) bool {
 		COLUMN_TYPE_BOOL,
 		COLUMN_TYPE_DATE,
 		COLUMN_TYPE_ENUM:
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidColumnConstraint(c ColumnConstraint) bool {
+	switch c {
+	case COLUMN_CONSTRAINT_NULL,
+		COLUMN_CONSTRAINT_NOT_NULL,
+		COLUMN_CONSTRAINT_AUTO_INCREMENT,
+		COLUMN_CONSTRAINT_FOREIGN_KEY,
+		COLUMN_CONSTRAINT_PRIMARY_KEY,
+		COLUMN_CONSTRAINT_UNIQUE:
 		return true
 	default:
 		return false
