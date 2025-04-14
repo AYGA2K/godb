@@ -390,8 +390,6 @@ func columnTypeConversion(colType ColumnType, val string) (any, error) {
 			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
 		}
 		return parsed_Date, nil
-	case COLUMN_TYPE_PRIMARY_KEY:
-		return val, nil // TODO: validate primary key
 	default:
 		return val, nil
 	}

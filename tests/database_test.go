@@ -1,18 +1,25 @@
 package database_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/AYGA2K/db/internal/database"
 )
 
+func cleanupTestDB() {
+	os.Remove("testdb.gob")
+}
+
 func TestCreateTable(t *testing.T) {
+	defer cleanupTestDB()
+
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := db.Execute("CREATE TABLE users (id INT, name STRING)")
+	res, err := db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -22,11 +29,13 @@ func TestCreateTable(t *testing.T) {
 }
 
 func TestInsertAndSelect(t *testing.T) {
+	defer cleanupTestDB()
+
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Execute("CREATE TABLE users (id INT, name STRING)")
+	_, err = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,17 +51,19 @@ func TestInsertAndSelect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Select error: %v", err)
 	}
-	if !strings.Contains(selectRes, `"name": "Alice"`) {
+	if !strings.Contains(selectRes, `"name": "Alice"`) || !strings.Contains(selectRes, `"id": 1`) {
 		t.Errorf("Unexpected select result: %s", selectRes)
 	}
 }
 
 func TestWhereClause(t *testing.T) {
+	defer cleanupTestDB()
+
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = db.Execute("CREATE TABLE users (id INT, name STRING)")
+	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
 	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (1, 'Alice')")
 	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (2, 'Bob')")
 
@@ -60,17 +71,19 @@ func TestWhereClause(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Select with where error: %v", err)
 	}
-	if !strings.Contains(res, `"name": "Bob"`) {
-		t.Errorf("Expected result to contain Bob, got: %s", res)
+	if !strings.Contains(res, `"name": "Bob"`) || strings.Contains(res, `"name": "Alice"`) {
+		t.Errorf("Expected result to contain Bob but not Alice, got: %s", res)
 	}
 }
 
 func TestDelete(t *testing.T) {
+	defer cleanupTestDB()
+
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = db.Execute("CREATE TABLE users (id INT, name STRING)")
+	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
 	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (1, 'Alice')")
 	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (2, 'Bob')")
 
@@ -85,17 +98,19 @@ func TestDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(selectRes, `"id": 1`) {
-		t.Errorf("Expected Alice to be deleted, got: %s", selectRes)
+	if strings.Contains(selectRes, `"id": 1`) || !strings.Contains(selectRes, `"id": 2`) {
+		t.Errorf("Expected Alice to be deleted and Bob to remain, got: %s", selectRes)
 	}
 }
 
 func TestUpdate(t *testing.T) {
+	defer cleanupTestDB()
+
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = db.Execute("CREATE TABLE users (id INT, name STRING)")
+	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
 	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (1, 'Alice')")
 	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (2, 'Bob')")
 
@@ -110,7 +125,9 @@ func TestUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(selectRes, `"name": "Charlie"`) {
-		t.Errorf("Expected Charlie, got: %s", selectRes)
+	if !strings.Contains(selectRes, `"name": "Charlie"`) ||
+		!strings.Contains(selectRes, `"id": 1`) ||
+		!strings.Contains(selectRes, `"name": "Bob"`) {
+		t.Errorf("Expected Charlie for id 1 and Bob to remain unchanged, got: %s", selectRes)
 	}
 }
