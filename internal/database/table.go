@@ -13,6 +13,10 @@ type Column struct {
 	Constraints []ColumnConstraint
 }
 
+func (c *Column) String() string {
+	return "Name: " + c.Name + "\nType: " + string(c.Type) + "\nConstraints: " + fmt.Sprint(c.Constraints) + "\n"
+}
+
 func parseColumnDef(columnDef string) (Column, error) {
 	parts := strings.Fields(strings.TrimSpace(columnDef))
 	if len(parts) < 2 {
@@ -21,19 +25,54 @@ func parseColumnDef(columnDef string) (Column, error) {
 
 	colName := parts[0]
 	colType := ColumnType(strings.ToUpper(parts[1]))
-	if len(parts) > 2 {
-		for _, constraint := range parts[2:] {
-			if constraint == "" {
-				break
+
+	if !isValidColumnType(colType) {
+		return Column{}, fmt.Errorf("invalid column type")
+	}
+
+	constraints, err := parseConstraints(parts[2:])
+	if err != nil {
+		return Column{}, err
+	}
+
+	return Column{
+		Name:        colName,
+		Type:        colType,
+		Constraints: constraints,
+	}, nil
+}
+
+func parseConstraints(parts []string) ([]ColumnConstraint, error) {
+	constraints := make([]ColumnConstraint, 0, len(parts))
+
+	for i := 0; i < len(parts); i++ {
+		constraint := strings.ToUpper(parts[i])
+
+		switch constraint {
+		case "NOT":
+			if i+1 < len(parts) && parts[i+1] == "NULL" {
+				constraints = append(constraints, COLUMN_CONSTRAINT_NOT_NULL)
+				i++ // Skip next part ("NULL")
 			}
-			// TODO: add constraint parsing
+		case "PRIMARY":
+			if i+1 < len(parts) && parts[i+1] == "KEY" {
+				constraints = append(constraints, COLUMN_CONSTRAINT_PRIMARY_KEY)
+				i++ // Skip next part ("KEY")
+			}
+		case "FOREIGN":
+			if i+1 < len(parts) && parts[i+1] == "KEY" {
+				constraints = append(constraints, COLUMN_CONSTRAINT_FOREIGN_KEY)
+				i++ // Skip next part ("KEY")
+			}
+		default:
+			if !isValidColumnConstraint(ColumnConstraint(constraint)) {
+				return nil, fmt.Errorf("invalid constraint: %s", constraint)
+			}
+			constraints = append(constraints, ColumnConstraint(constraint))
 		}
 	}
-	column := Column{
-		Name: colName,
-		Type: colType,
-	}
-	return column, nil
+
+	return constraints, nil
 }
 
 type ColumnType string
@@ -64,6 +103,19 @@ type Table struct {
 	Name    string
 	Columns []Column
 	Rows    []Row
+}
+
+func (t *Table) String() string {
+	name := "Table " + t.Name + "\n"
+	columns := "Columns:\n"
+	for _, col := range t.Columns {
+		columns += fmt.Sprintf("%s\n", col.String())
+	}
+	rows := "Rows:\n"
+	for _, row := range t.Rows {
+		rows += fmt.Sprintf("%s\n", row.String())
+	}
+	return name + columns + rows
 }
 
 // Row represents a table row (record)

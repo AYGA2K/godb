@@ -155,3 +155,109 @@ func TestDropTable(t *testing.T) {
 		t.Errorf("Table users still exists")
 	}
 }
+
+func TestColumnTypeParsing(t *testing.T) {
+	defer cleanupTestDB()
+	db, err := database.NewDatabase("testdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Define test cases
+	tests := []struct {
+		tableName   string
+		createStmt  string
+		expectExist bool
+		colType     database.ColumnType
+		constraints []database.ColumnConstraint
+	}{
+		{"test_int", "CREATE TABLE test_int (col INT)", true, database.COLUMN_TYPE_INT, nil},
+		{"test_double", "CREATE TABLE test_double (col DOUBLE)", true, database.COLUMN_TYPE_DOUBLE, nil},
+		{"test_float", "CREATE TABLE test_float (col FLOAT)", true, database.COLUMN_TYPE_FLOAT, nil},
+		{"test_varchar", "CREATE TABLE test_varchar (col VARCHAR)", true, database.COLUMN_TYPE_VARCHAR, nil},
+		{"test_bool", "CREATE TABLE test_bool (col BOOL)", true, database.COLUMN_TYPE_BOOL, nil},
+		{"test_date", "CREATE TABLE test_date (col DATE)", true, database.COLUMN_TYPE_DATE, nil},
+		{"test_enum", "CREATE TABLE test_enum (col ENUM)", true, database.COLUMN_TYPE_ENUM, nil},
+		{"test_invalid_type", "CREATE TABLE test_invalid_type (col INVALID_TYPE)", false, "", nil},
+		{
+			"test_null", "CREATE TABLE test_null (col INT NULL)", true, database.COLUMN_TYPE_INT,
+			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_NULL},
+		},
+		{
+			"test_not_null", "CREATE TABLE test_not_null (col INT NOT NULL)", true, database.COLUMN_TYPE_INT,
+			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_NOT_NULL},
+		},
+		{
+			"test_foreign_key", "CREATE TABLE test_foreign_key (col INT FOREIGN KEY)", true,
+			database.COLUMN_TYPE_INT,
+			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_FOREIGN_KEY},
+		},
+		{
+			"test_unique_index", "CREATE TABLE test_unique_index (col INT UNIQUE)", true,
+			database.COLUMN_TYPE_INT,
+			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_UNIQUE},
+		},
+		{
+			"test_primary_key_index", "CREATE TABLE test_primary_key_index (col INT PRIMARY KEY)", true,
+			database.COLUMN_TYPE_INT,
+			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_PRIMARY_KEY},
+		},
+		{
+			"test_auto_increment_index", "CREATE TABLE test_auto_increment_index (col INT AUTO_INCREMENT)", true,
+			database.COLUMN_TYPE_INT,
+			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_AUTO_INCREMENT},
+		},
+		{
+			"test_foreign_key_index", "CREATE TABLE test_foreign_key_index (col INT FOREIGN KEY)", true,
+			database.COLUMN_TYPE_INT,
+			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_FOREIGN_KEY},
+		},
+	}
+
+	// Create tables
+	for _, test := range tests {
+		_, _ = db.Execute(test.createStmt)
+	}
+
+	tables, err := db.AllTables()
+	if err != nil {
+		t.Errorf("Expected no error, got: %s", err)
+	}
+
+	// Verify each test case
+	for _, test := range tests {
+		t.Run(test.tableName, func(t *testing.T) {
+			table, exists := tables[test.tableName]
+			if exists != test.expectExist {
+				t.Errorf("Expected table %s existence to be %v, got %v", test.tableName, test.expectExist, exists)
+				return
+			}
+
+			if !test.expectExist {
+				return
+			}
+
+			if len(table.Columns) == 0 {
+				t.Errorf("Expected at least one column, got none")
+				return
+			}
+
+			column := table.Columns[0]
+			if column.Name != "col" {
+				t.Errorf("Expected column name to be 'col', got: %s", column.Name)
+			}
+			if column.Type != test.colType {
+				t.Errorf("Expected column type to be %s, got: %s", test.colType, column.Type)
+			}
+			if len(column.Constraints) != len(test.constraints) {
+				t.Errorf("Expected %d constraints, got: %v", len(test.constraints), column.Constraints)
+			} else {
+				for i, constraint := range test.constraints {
+					if column.Constraints[i] != constraint {
+						t.Errorf("Expected constraint %d to be %s, got: %s", i, constraint, column.Constraints[i])
+					}
+				}
+			}
+		})
+	}
+}

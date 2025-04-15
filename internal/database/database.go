@@ -151,22 +151,11 @@ func (db *Database) CreateTable(name string, columnDefs []string) (string, error
 	}
 
 	for _, def := range columnDefs {
-		parts := strings.Fields(strings.TrimSpace(def))
-		if len(parts) < 2 {
-			return "", fmt.Errorf("invalid column definition: %s", def)
+		if column, err := parseColumnDef(def); err != nil {
+			return "", err
+		} else {
+			table.Columns = append(table.Columns, column)
 		}
-
-		colName := parts[0]
-		colType := ColumnType(strings.ToUpper(parts[1]))
-
-		if !isValidColumnType(colType) {
-			return "", fmt.Errorf("invalid column type: %s", colType)
-		}
-
-		table.Columns = append(table.Columns, Column{
-			Name: colName,
-			Type: colType,
-		})
 	}
 
 	database.Tables[name] = table
@@ -414,4 +403,20 @@ func columnTypeConversion(colType ColumnType, val string) (any, error) {
 	default:
 		return val, nil
 	}
+}
+
+func (db *Database) String() string {
+	tables := "Tables:\n"
+	for _, table := range db.Tables {
+		tables += fmt.Sprintf("%s\n", table.String())
+	}
+	return tables
+}
+
+func (db *Database) AllTables() (map[string]*Table, error) {
+	database, err := loadFromFileGob(db.Name)
+	if err != nil {
+		return nil, err
+	}
+	return database.Tables, nil
 }
