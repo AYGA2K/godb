@@ -171,44 +171,117 @@ func TestColumnTypeParsing(t *testing.T) {
 		colType     database.ColumnType
 		constraints []database.ColumnConstraint
 	}{
-		{"test_int", "CREATE TABLE test_int (col INT)", true, database.COLUMN_TYPE_INT, nil},
-		{"test_double", "CREATE TABLE test_double (col DOUBLE)", true, database.COLUMN_TYPE_DOUBLE, nil},
-		{"test_float", "CREATE TABLE test_float (col FLOAT)", true, database.COLUMN_TYPE_FLOAT, nil},
-		{"test_varchar", "CREATE TABLE test_varchar (col VARCHAR)", true, database.COLUMN_TYPE_VARCHAR, nil},
-		{"test_bool", "CREATE TABLE test_bool (col BOOL)", true, database.COLUMN_TYPE_BOOL, nil},
-		{"test_date", "CREATE TABLE test_date (col DATE)", true, database.COLUMN_TYPE_DATE, nil},
-		{"test_enum", "CREATE TABLE test_enum (col ENUM)", true, database.COLUMN_TYPE_ENUM, nil},
-		{"test_invalid_type", "CREATE TABLE test_invalid_type (col INVALID_TYPE)", false, "", nil},
 		{
-			"test_null", "CREATE TABLE test_null (col INT NULL)", true, database.COLUMN_TYPE_INT,
+			"test_int",
+			"CREATE TABLE test_int (col INT)",
+			true,
+			database.COLUMN_TYPE_INT,
+			nil,
+		},
+		{
+			"test_double",
+			"CREATE TABLE test_double (col DOUBLE)",
+			true,
+			database.COLUMN_TYPE_DOUBLE,
+			nil,
+		},
+		{
+			"test_float",
+			"CREATE TABLE test_float (col FLOAT)",
+			true,
+			database.COLUMN_TYPE_FLOAT,
+			nil,
+		},
+		{
+			"test_varchar",
+			"CREATE TABLE test_varchar (col VARCHAR)",
+			true,
+			database.COLUMN_TYPE_VARCHAR,
+			nil,
+		},
+		{
+			"test_bool",
+			"CREATE TABLE test_bool (col BOOL)",
+			true,
+			database.COLUMN_TYPE_BOOL,
+			nil,
+		},
+		{
+			"test_date",
+			"CREATE TABLE test_date (col DATE)",
+			true,
+			database.COLUMN_TYPE_DATE,
+			nil,
+		},
+		{
+			"test_enum",
+			"CREATE TABLE test_enum (col ENUM)",
+			true,
+			database.COLUMN_TYPE_ENUM,
+			nil,
+		},
+		{
+			"test_invalid_type",
+			"CREATE TABLE test_invalid_type (col INVALID_TYPE)",
+			false,
+			"",
+			nil,
+		},
+
+		{
+			"test_null",
+			"CREATE TABLE test_null (col INT NULL)",
+			true,
+			database.COLUMN_TYPE_INT,
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_NULL},
 		},
+
 		{
-			"test_not_null", "CREATE TABLE test_not_null (col INT NOT NULL)", true, database.COLUMN_TYPE_INT,
+			"test_not_null",
+			"CREATE TABLE test_not_null (col INT NOT NULL)",
+			true,
+			database.COLUMN_TYPE_INT,
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_NOT_NULL},
 		},
+
 		{
-			"test_foreign_key", "CREATE TABLE test_foreign_key (col INT FOREIGN KEY)", true,
+			"test_foreign_key",
+			"CREATE TABLE test_foreign_key (col INT FOREIGN KEY)",
+			true,
 			database.COLUMN_TYPE_INT,
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_FOREIGN_KEY},
 		},
+
 		{
-			"test_unique_index", "CREATE TABLE test_unique_index (col INT UNIQUE)", true,
+			"test_unique_index",
+			"CREATE TABLE test_unique_index (col INT UNIQUE)",
+			true,
 			database.COLUMN_TYPE_INT,
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_UNIQUE},
 		},
+
 		{
-			"test_primary_key_index", "CREATE TABLE test_primary_key_index (col INT PRIMARY KEY)", true,
+			"test_primary_key_index",
+			"CREATE TABLE test_primary_key_index (col INT PRIMARY KEY)",
+			true,
 			database.COLUMN_TYPE_INT,
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_PRIMARY_KEY},
 		},
+
 		{
-			"test_auto_increment_index", "CREATE TABLE test_auto_increment_index (col INT AUTO_INCREMENT)", true,
+			"test_auto_increment_index",
+			"CREATE TABLE test_auto_increment_index (col INT AUTO_INCREMENT)",
+			true,
+
 			database.COLUMN_TYPE_INT,
+
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_AUTO_INCREMENT},
 		},
+
 		{
-			"test_foreign_key_index", "CREATE TABLE test_foreign_key_index (col INT FOREIGN KEY)", true,
+			"test_foreign_key_index",
+			"CREATE TABLE test_foreign_key_index (col INT FOREIGN KEY)",
+			true,
 			database.COLUMN_TYPE_INT,
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_FOREIGN_KEY},
 		},
@@ -237,12 +310,12 @@ func TestColumnTypeParsing(t *testing.T) {
 				return
 			}
 
-			if len(table.Columns) == 0 {
+			if len(table.GetColumns()) == 0 {
 				t.Errorf("Expected at least one column, got none")
 				return
 			}
 
-			column := table.Columns[0]
+			column := table.GetColumns()[0]
 			if column.Name != "col" {
 				t.Errorf("Expected column name to be 'col', got: %s", column.Name)
 			}

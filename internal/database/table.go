@@ -20,6 +20,14 @@ func newTable(name string) *Table {
 	}
 }
 
+func (t Table) GetColumns() []Column {
+	return t.columns
+}
+
+func (t Table) GetRows() []Row {
+	return t.rows
+}
+
 func (t *Table) addColumn(column Column) {
 	t.columns = append(t.columns, column)
 }
