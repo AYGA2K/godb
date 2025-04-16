@@ -144,17 +144,13 @@ func (db *Database) CreateTable(name string, columnDefs []string) (string, error
 		return "", fmt.Errorf("table %s already exists", name)
 	}
 
-	table := &Table{
-		Name:    name,
-		Columns: []Column{},
-		Rows:    []Row{},
-	}
+	table := newTable(name)
 
 	for _, def := range columnDefs {
 		if column, err := parseColumnDef(def); err != nil {
 			return "", err
 		} else {
-			table.Columns = append(table.Columns, column)
+			table.addColumn(column)
 		}
 	}
 
@@ -198,16 +194,17 @@ func (db *Database) Insert(tableName string, columns []string, values []string) 
 	for i, col := range columns {
 		col = strings.TrimSpace(col)
 		val := strings.TrimSpace(values[i])
+		constraints := []ColumnConstraint{}
 
 		// Find column type
 		var colType ColumnType
 		for _, column := range table.Columns {
 			if column.Name == col {
 				colType = column.Type
+				constraints = column.Constraints
 				break
 			}
 		}
-
 		// Simple type conversion
 		convertedVal, err := columnTypeConversion(colType, val)
 		if err != nil {
@@ -216,7 +213,7 @@ func (db *Database) Insert(tableName string, columns []string, values []string) 
 		row[col] = convertedVal
 	}
 
-	table.Rows = append(table.Rows, row)
+	table.addRow(row)
 	err = database.saveToFileGob()
 	if err != nil {
 		return "", err
@@ -233,16 +230,16 @@ func (db *Database) Delete(tableName string, whereClause string) (string, error)
 	table, exists := database.Tables[tableName]
 	if !exists {
 		return "", fmt.Errorf("table %s does not exist", tableName)
-	} else if len(table.Rows) == 0 {
+	} else if len(table.rows) == 0 {
 		return "", fmt.Errorf("table %s is empty", tableName)
 	}
 	var results []Row
-	for _, row := range table.Rows {
+	for _, row := range table.rows {
 		if whereClause == "" || !db.evaluateWhere(row, whereClause) {
 			results = append(results, row)
 		}
 	}
-	table.Rows = results
+	table.rows = results
 	err = database.saveToFileGob()
 	if err != nil {
 		return "", err
@@ -261,7 +258,7 @@ func (db *Database) Select(tableName string, columns []string, whereClause strin
 		return "", fmt.Errorf("table %s does not exist", tableName)
 	}
 	var results []Row
-	for _, row := range table.Rows {
+	for _, row := range table.rows {
 		if whereClause == "" || db.evaluateWhere(row, whereClause) {
 			resultRow := make(Row)
 			for _, col := range columns {
@@ -311,12 +308,12 @@ func (db *Database) Update(tableName string, setClause string, whereClause strin
 	if !exists {
 		return "", fmt.Errorf("table %s does not exist", tableName)
 	}
-	if len(table.Rows) == 0 {
+	if len(table.rows) == 0 {
 		return "", fmt.Errorf("table %s is empty", tableName)
 	}
 	var rowCount int
 	var updatedIndices []int
-	for i, row := range table.Rows {
+	for i, row := range table.rows {
 		if db.evaluateWhere(row, whereClause) {
 			updatedIndices = append(updatedIndices, i)
 			rowCount++
@@ -335,7 +332,7 @@ func (db *Database) Update(tableName string, setClause string, whereClause strin
 		val := strings.TrimSpace(parts[1])
 		// find column type
 		var colType ColumnType
-		for _, column := range table.Columns {
+		for _, column := range table.columns {
 			if column.Name == col {
 				colType = column.Type
 				break
@@ -351,7 +348,7 @@ func (db *Database) Update(tableName string, setClause string, whereClause strin
 			return "", err
 		}
 		for _, i := range updatedIndices {
-			table.Rows[i][col] = convertedVal
+			table.rows[i][col] = convertedVal
 		}
 	}
 	err = database.saveToFileGob()
