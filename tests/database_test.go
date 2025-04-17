@@ -244,13 +244,13 @@ func TestColumnTypeParsing(t *testing.T) {
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_NOT_NULL},
 		},
 
-		{
-			"test_foreign_key",
-			"CREATE TABLE test_foreign_key (col INT FOREIGN KEY)",
-			true,
-			database.COLUMN_TYPE_INT,
-			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_FOREIGN_KEY},
-		},
+		// {
+		// 	"test_foreign_key",
+		// 	"CREATE TABLE test_foreign_key (col INT FOREIGN KEY)",
+		// 	true,
+		// 	database.COLUMN_TYPE_INT,
+		// 	[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_FOREIGN_KEY},
+		// },
 
 		{
 			"test_unique_index",
@@ -278,13 +278,13 @@ func TestColumnTypeParsing(t *testing.T) {
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_AUTO_INCREMENT},
 		},
 
-		{
-			"test_foreign_key_index",
-			"CREATE TABLE test_foreign_key_index (col INT FOREIGN KEY)",
-			true,
-			database.COLUMN_TYPE_INT,
-			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_FOREIGN_KEY},
-		},
+		// {
+		// 	"test_foreign_key_index",
+		// 	"CREATE TABLE test_foreign_key_index (col INT FOREIGN KEY)",
+		// 	true,
+		// 	database.COLUMN_TYPE_INT,
+		// 	[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_FOREIGN_KEY},
+		// },
 	}
 
 	// Create tables

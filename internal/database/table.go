@@ -5,10 +5,11 @@ import (
 )
 
 type Table struct {
-	Name       string
-	Columns    []Column
-	Rows       []Row
-	PrimaryKey string
+	Name        string
+	Columns     []Column
+	Rows        []Row
+	PrimaryKey  string
+	ForeignKeys map[string]string
 }
 
 func newTable(name string) *Table {

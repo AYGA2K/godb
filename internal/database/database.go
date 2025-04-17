@@ -63,15 +63,29 @@ func loadFromFileGob(name string) (*Database, error) {
 // Execute processes SQL commands
 func (db *Database) Execute(sql string) (string, error) {
 	// Basic SQL parsing
-	createRegex := regexp.MustCompile(`(?i)^CREATE TABLE (\w+) \((.+)\)$`)
-	insertRegex := regexp.MustCompile(`(?i)^INSERT INTO (\w+) \((.+)\) VALUES \((.+)\)$`)
+	createRegex := regexp.MustCompile(`(?i)^CREATE TABLE (\w+)\s*\((.+)\)$`)
+	createForeignKeyRegex := regexp.MustCompile(`(?i)^CREATE TABLE (\w+)\s*\((.*?FOREIGN KEY\s*\(\w+\)\s+REFERENCES\s+\w+\s*\(\w+\).*)\)$`)
+	insertRegex := regexp.MustCompile(`(?i)^INSERT INTO (\w+)\s*\((.+)\)\s*VALUES\s*\((.+)\)$`)
 	selectRegex := regexp.MustCompile(`(?i)^SELECT (.+) FROM (\w+)(?: WHERE (.+))?$`)
 	deleteRegex := regexp.MustCompile(`(?i)^DELETE FROM (\w+)(?: WHERE (.+))?$`)
-	updateRegex := regexp.MustCompile(`(?i)^UPDATE (\w+) SET (.+) WHERE (.+)$`)
+	updateRegex := regexp.MustCompile(`(?i)^UPDATE (\w+)\s+SET (.+)\s+WHERE (.+)$`)
 	dropTableRegex := regexp.MustCompile(`(?i)^DROP TABLE (\w+)$`)
 
 	switch {
 	case strings.HasPrefix(strings.ToUpper(sql), "CREATE TABLE"):
+		if strings.Contains(sql, "FOREIGN KEY") {
+			matches := createForeignKeyRegex.FindStringSubmatch(sql)
+			if len(matches) < 6 {
+				return "", fmt.Errorf("invalid CREATE TABLE syntax")
+			}
+			tableName := matches[1]
+			columns := strings.Split(matches[2], ",")
+			// foreignKeyColumn := matches[3]
+			// referencedTable := matches[4]
+			// referencedColumn := matches[5]
+
+			return db.CreateTable(tableName, columns)
+		}
 		matches := createRegex.FindStringSubmatch(sql)
 		if len(matches) < 3 {
 			return "", fmt.Errorf("invalid CREATE TABLE syntax")
@@ -150,6 +164,11 @@ func (db *Database) CreateTable(name string, columnDefs []string) (string, error
 		if column, err := parseColumnDef(def); err != nil {
 			return "", err
 		} else {
+			if column.HasConstraint(COLUMN_CONSTRAINT_FOREIGN_KEY) {
+				if !db.tableExists(string(column.Constraints[0])) {
+					return "", fmt.Errorf("foreign key table %s does not exist", column.Constraints[0])
+				}
+			}
 			table.addColumn(column)
 		}
 	}
@@ -402,9 +421,18 @@ func columnTypeConversion(colType ColumnType, val string) (any, error) {
 func (db *Database) String() string {
 	tables := "Tables:\n"
 	for _, table := range db.Tables {
-		tables += fmt.Sprintf("%s\n", table.String())
+		tables += fmt.Sprintf("%s\n", table)
 	}
 	return tables
+}
+
+func (db *Database) tableExists(name string) bool {
+	tables, err := db.AllTables()
+	if err != nil {
+		return false
+	}
+	_, exists := tables[name]
+	return exists
 }
 
 func (db *Database) AllTables() (map[string]*Table, error) {
