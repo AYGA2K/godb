@@ -334,3 +334,23 @@ func TestColumnTypeParsing(t *testing.T) {
 		})
 	}
 }
+
+func TestPrimaryKeyAutoIncrement(t *testing.T) {
+	defer cleanupTestDB()
+
+	db, err := database.NewDatabase("testdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.Execute("CREATE TABLE users (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR)")
+	_, _ = db.Execute("INSERT INTO users (name) VALUES ( 'Alice')")
+	_, _ = db.Execute("INSERT INTO users (name) VALUES ( 'Bob')")
+
+	res, err := db.Execute("SELECT * FROM users WHERE id = 2")
+	if err != nil {
+		t.Fatalf("Select with where error: %v", err)
+	}
+	if !strings.Contains(res, `"id": 2`) {
+		t.Errorf("Expected result to contain id 2, got: %s", res)
+	}
+}
