@@ -4,127 +4,114 @@ import (
 	"fmt"
 )
 
-// Table represents a database table
 type Table struct {
-	name       string
-	columns    []Column
-	rows       []Row
-	primaryKey string
+	Name       string
+	Columns    []Column
+	Rows       []Row
+	PrimaryKey string
 }
 
 func newTable(name string) *Table {
 	return &Table{
-		name:    name,
-		columns: []Column{},
-		rows:    []Row{},
+		Name:    name,
+		Columns: []Column{},
+		Rows:    []Row{},
 	}
 }
 
 func (t Table) GetColumns() []Column {
-	return t.columns
+	return t.Columns
 }
 
 func (t Table) GetRows() []Row {
-	return t.rows
+	return t.Rows
 }
 
 func (t *Table) addColumn(column Column) {
-	t.columns = append(t.columns, column)
+	t.Columns = append(t.Columns, column)
 }
 
 func (t *Table) addRow(row Row) error {
 	if err := t.validatePrimaryKey(row); err != nil {
 		return err
 	}
-	if t.hasUnique() {
-		if err := t.validateUnique(row); err != nil {
-			return err
-		}
-	}
-	if err := t.autoIncrement(); err != nil {
+	if err := t.validateUnique(row); err != nil {
 		return err
 	}
-	t.rows = append(t.rows, row)
+	if err := t.applyAutoIncrement(&row); err != nil {
+		return err
+	}
+	t.Rows = append(t.Rows, row)
 	return nil
 }
 
 func (t *Table) hasUnique() bool {
-	for _, column := range t.columns {
-		for _, constraint := range column.Constraints {
-			if constraint == COLUMN_CONSTRAINT_UNIQUE {
-				return true
-			}
+	for _, column := range t.Columns {
+		if column.HasConstraint(COLUMN_CONSTRAINT_UNIQUE) {
+			return true
 		}
 	}
 	return false
 }
 
-// handle constraints :
-// handle primary key
 func (t *Table) validatePrimaryKey(row Row) error {
-	for _, row := range t.rows {
-		if row[t.primaryKey] == row[t.primaryKey] {
-			return fmt.Errorf("primary key already exists")
-		}
-	}
-	return fmt.Errorf("primary key can not be duplicated")
-}
-
-// validate unique
-func (t *Table) validateUnique(row Row) error {
-	var unique string
-	for _, column := range t.columns {
-		for _, constraint := range column.Constraints {
-			if constraint == COLUMN_CONSTRAINT_UNIQUE {
-				unique = column.Name
-			}
-		}
-	}
-	if unique == "" {
+	if t.PrimaryKey == "" {
 		return nil
 	}
-	uniqueValues := make(map[string]bool)
-	for _, row := range t.rows {
-		val, exists := row[unique]
-		if !exists {
-			continue
-		}
-		uniqueValues[fmt.Sprint(val)] = true
+
+	pkValue, exists := row[t.PrimaryKey]
+	if !exists {
+		return fmt.Errorf("primary key column %s not provided", t.PrimaryKey)
 	}
-	if _, exists := uniqueValues[fmt.Sprint(row[unique])]; exists {
-		return fmt.Errorf("unique value already exists")
+
+	for _, existingRow := range t.Rows {
+		if existingRow[t.PrimaryKey] == pkValue {
+			return fmt.Errorf("primary key value %v already exists", pkValue)
+		}
 	}
 	return nil
 }
 
-// handle auto increment
-func (t *Table) autoIncrement() error {
-	var autoIncrement string
-	for _, column := range t.columns {
-		for _, constraint := range column.Constraints {
-			if constraint == COLUMN_CONSTRAINT_AUTO_INCREMENT {
-				autoIncrement = column.Name
+func (t *Table) validateUnique(row Row) error {
+	for _, column := range t.Columns {
+		if column.HasConstraint(COLUMN_CONSTRAINT_UNIQUE) {
+			val := row[column.Name]
+			for _, existingRow := range t.Rows {
+				if existingRow[column.Name] == val {
+					return fmt.Errorf("unique constraint violation on column %s", column.Name)
+				}
 			}
 		}
 	}
-	for _, row := range t.rows {
-		val, exists := row[autoIncrement]
-		if exists {
-			row[autoIncrement] = val.(int) + 1
+	return nil
+}
+
+func (t *Table) applyAutoIncrement(row *Row) error {
+	for _, col := range t.Columns {
+		if col.HasConstraint(COLUMN_CONSTRAINT_AUTO_INCREMENT) {
+			if _, exists := (*row)[col.Name]; !exists {
+				max := 0
+				for _, existingRow := range t.Rows {
+					if val, ok := existingRow[col.Name].(int); ok && val > max {
+						max = val
+					}
+				}
+				(*row)[col.Name] = max + 1
+			}
 		}
 	}
-	return fmt.Errorf("auto increment field ")
+	return nil
 }
 
 func (t Table) String() string {
-	name := "Table " + t.name + "\n"
+	name := "Table " + t.Name + "\n"
 	columns := "Columns:\n"
-	for _, col := range t.columns {
-		columns += fmt.Sprintf("%s\n", col.String())
+	for _, col := range t.Columns {
+		columns += fmt.Sprintf("%s\n", col.Name)
 	}
 	rows := "Rows:\n"
-	for _, row := range t.rows {
-		rows += fmt.Sprintf("%s\n", row.String())
+	for _, row := range t.Rows {
+		rows += fmt.Sprintf("%v\n", row)
 	}
 	return name + columns + rows
 }

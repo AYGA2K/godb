@@ -96,3 +96,12 @@ func parseConstraints(parts []string) ([]ColumnConstraint, error) {
 
 	return constraints, nil
 }
+
+func (c *Column) HasConstraint(constraint ColumnConstraint) bool {
+	for _, con := range c.Constraints {
+		if con == constraint {
+			return true
+		}
+	}
+	return false
+}

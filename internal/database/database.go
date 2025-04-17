@@ -194,15 +194,12 @@ func (db *Database) Insert(tableName string, columns []string, values []string) 
 	for i, col := range columns {
 		col = strings.TrimSpace(col)
 		val := strings.TrimSpace(values[i])
-		constraints := []ColumnConstraint{}
 
 		// Find column type
 		var colType ColumnType
 		for _, column := range table.Columns {
 			if column.Name == col {
 				colType = column.Type
-				constraints = column.Constraints
-				break
 			}
 		}
 		// Simple type conversion
@@ -230,16 +227,16 @@ func (db *Database) Delete(tableName string, whereClause string) (string, error)
 	table, exists := database.Tables[tableName]
 	if !exists {
 		return "", fmt.Errorf("table %s does not exist", tableName)
-	} else if len(table.rows) == 0 {
+	} else if len(table.Rows) == 0 {
 		return "", fmt.Errorf("table %s is empty", tableName)
 	}
 	var results []Row
-	for _, row := range table.rows {
+	for _, row := range table.Rows {
 		if whereClause == "" || !db.evaluateWhere(row, whereClause) {
 			results = append(results, row)
 		}
 	}
-	table.rows = results
+	table.Rows = results
 	err = database.saveToFileGob()
 	if err != nil {
 		return "", err
@@ -258,7 +255,7 @@ func (db *Database) Select(tableName string, columns []string, whereClause strin
 		return "", fmt.Errorf("table %s does not exist", tableName)
 	}
 	var results []Row
-	for _, row := range table.rows {
+	for _, row := range table.Rows {
 		if whereClause == "" || db.evaluateWhere(row, whereClause) {
 			resultRow := make(Row)
 			for _, col := range columns {
@@ -308,12 +305,12 @@ func (db *Database) Update(tableName string, setClause string, whereClause strin
 	if !exists {
 		return "", fmt.Errorf("table %s does not exist", tableName)
 	}
-	if len(table.rows) == 0 {
+	if len(table.Rows) == 0 {
 		return "", fmt.Errorf("table %s is empty", tableName)
 	}
 	var rowCount int
 	var updatedIndices []int
-	for i, row := range table.rows {
+	for i, row := range table.Rows {
 		if db.evaluateWhere(row, whereClause) {
 			updatedIndices = append(updatedIndices, i)
 			rowCount++
@@ -332,7 +329,7 @@ func (db *Database) Update(tableName string, setClause string, whereClause strin
 		val := strings.TrimSpace(parts[1])
 		// find column type
 		var colType ColumnType
-		for _, column := range table.columns {
+		for _, column := range table.Columns {
 			if column.Name == col {
 				colType = column.Type
 				break
@@ -348,7 +345,7 @@ func (db *Database) Update(tableName string, setClause string, whereClause strin
 			return "", err
 		}
 		for _, i := range updatedIndices {
-			table.rows[i][col] = convertedVal
+			table.Rows[i][col] = convertedVal
 		}
 	}
 	err = database.saveToFileGob()
