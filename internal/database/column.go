@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -30,78 +31,74 @@ const (
 
 // Column represents a table column
 type Column struct {
-	Name        string
-	Type        ColumnType
-	Constraints []ColumnConstraint
+	Name            string
+	Type            ColumnType
+	Constraints     []ColumnConstraint
+	ReferenceTable  string
+	ReferenceColumn string
 }
 
 func (c *Column) String() string {
 	return "Name: " + c.Name + "\nType: " + string(c.Type) + "\nConstraints: " + fmt.Sprint(c.Constraints) + "\n"
 }
 
-func parseColumnDef(columnDef string) (Column, error) {
+func (c *Column) parseColumnDef(columnDef string) error {
 	parts := strings.Fields(strings.TrimSpace(columnDef))
 	if len(parts) < 2 {
-		return Column{}, fmt.Errorf("invalid column definition")
+		return fmt.Errorf("invalid column definition")
 	}
 
 	colName := parts[0]
 	colType := ColumnType(strings.ToUpper(parts[1]))
-
-	if !isValidColumnType(colType) {
-		return Column{}, fmt.Errorf("invalid column type")
+	if !isValidColumnType(ColumnType(colType)) {
+		return fmt.Errorf("invalid column type")
 	}
 
-	constraints, err := parseConstraints(parts[2:])
-	if err != nil {
-		return Column{}, err
+	if err := c.parseConstraints(parts[2:]); err != nil {
+		return err
 	}
-
-	return Column{
-		Name:        colName,
-		Type:        colType,
-		Constraints: constraints,
-	}, nil
+	c.Name = colName
+	c.Type = colType
+	return nil
 }
 
-func parseConstraints(parts []string) ([]ColumnConstraint, error) {
-	constraints := make([]ColumnConstraint, 0, len(parts))
-
+func (c *Column) parseConstraints(parts []string) error {
 	for i := 0; i < len(parts); i++ {
 		constraint := strings.ToUpper(parts[i])
+		switch {
+		case constraint == "NOT" && i+1 < len(parts) && parts[i+1] == "NULL":
+			c.Constraints = append(c.Constraints, COLUMN_CONSTRAINT_NOT_NULL)
+			i++ // Skip next part ("NULL")
+		case constraint == "PRIMARY" && i+1 < len(parts) && parts[i+1] == "KEY":
+			c.Constraints = append(c.Constraints, COLUMN_CONSTRAINT_PRIMARY_KEY)
+			i++ // Skip next part ("KEY")
+		case constraint == "FOREIGN" && i+3 < len(parts) &&
+			strings.ToUpper(parts[i+1]) == "KEY" &&
+			strings.ToUpper(parts[i+2]) == "REFERENCES":
 
-		switch constraint {
-		case "NOT":
-			if i+1 < len(parts) && parts[i+1] == "NULL" {
-				constraints = append(constraints, COLUMN_CONSTRAINT_NOT_NULL)
-				i++ // Skip next part ("NULL")
+			c.Constraints = append(c.Constraints, COLUMN_CONSTRAINT_FOREIGN_KEY)
+
+			ref := parts[i+3]
+			open := strings.Index(ref, "(")
+			close := strings.Index(ref, ")")
+
+			if open == -1 || close == -1 || close <= open+1 {
+				return fmt.Errorf("invalid foreign key reference")
 			}
-		case "PRIMARY":
-			if i+1 < len(parts) && parts[i+1] == "KEY" {
-				constraints = append(constraints, COLUMN_CONSTRAINT_PRIMARY_KEY)
-				i++ // Skip next part ("KEY")
-			}
-		case "FOREIGN":
-			if i+1 < len(parts) && parts[i+1] == "KEY" {
-				constraints = append(constraints, COLUMN_CONSTRAINT_FOREIGN_KEY)
-				i++ // Skip next part ("KEY")
-			}
+			c.ReferenceTable = ref[:open]
+			c.ReferenceColumn = ref[open+1 : close]
+			i += 3
 		default:
 			if !isValidColumnConstraint(ColumnConstraint(constraint)) {
-				return nil, fmt.Errorf("invalid constraint: %s", constraint)
+				return fmt.Errorf("invalid constraint: %s", constraint)
 			}
-			constraints = append(constraints, ColumnConstraint(constraint))
+			c.Constraints = append(c.Constraints, ColumnConstraint(constraint))
 		}
 	}
 
-	return constraints, nil
+	return nil
 }
 
 func (c *Column) HasConstraint(constraint ColumnConstraint) bool {
-	for _, con := range c.Constraints {
-		if con == constraint {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Constraints, constraint)
 }

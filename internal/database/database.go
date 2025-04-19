@@ -64,7 +64,6 @@ func loadFromFileGob(name string) (*Database, error) {
 func (db *Database) Execute(sql string) (string, error) {
 	// Basic SQL parsing
 	createRegex := regexp.MustCompile(`(?i)^CREATE TABLE (\w+)\s*\((.+)\)$`)
-	createForeignKeyRegex := regexp.MustCompile(`(?i)^CREATE TABLE (\w+)\s*\((.*?FOREIGN KEY\s*\(\w+\)\s+REFERENCES\s+\w+\s*\(\w+\).*)\)$`)
 	insertRegex := regexp.MustCompile(`(?i)^INSERT INTO (\w+)\s*\((.+)\)\s*VALUES\s*\((.+)\)$`)
 	selectRegex := regexp.MustCompile(`(?i)^SELECT (.+) FROM (\w+)(?: WHERE (.+))?$`)
 	deleteRegex := regexp.MustCompile(`(?i)^DELETE FROM (\w+)(?: WHERE (.+))?$`)
@@ -73,19 +72,6 @@ func (db *Database) Execute(sql string) (string, error) {
 
 	switch {
 	case strings.HasPrefix(strings.ToUpper(sql), "CREATE TABLE"):
-		if strings.Contains(sql, "FOREIGN KEY") {
-			matches := createForeignKeyRegex.FindStringSubmatch(sql)
-			if len(matches) < 6 {
-				return "", fmt.Errorf("invalid CREATE TABLE syntax")
-			}
-			tableName := matches[1]
-			columns := strings.Split(matches[2], ",")
-			// foreignKeyColumn := matches[3]
-			// referencedTable := matches[4]
-			// referencedColumn := matches[5]
-
-			return db.CreateTable(tableName, columns)
-		}
 		matches := createRegex.FindStringSubmatch(sql)
 		if len(matches) < 3 {
 			return "", fmt.Errorf("invalid CREATE TABLE syntax")
@@ -160,19 +146,18 @@ func (db *Database) CreateTable(name string, columnDefs []string) (string, error
 
 	table := newTable(name)
 
+	column := &Column{}
 	for _, def := range columnDefs {
-		if column, err := parseColumnDef(def); err != nil {
+		if err := column.parseColumnDef(def); err != nil {
 			return "", err
-		} else {
-			if column.HasConstraint(COLUMN_CONSTRAINT_FOREIGN_KEY) {
-				if !db.tableExists(string(column.Constraints[0])) {
-					return "", fmt.Errorf("foreign key table %s does not exist", column.Constraints[0])
-				}
-			}
-			table.addColumn(column)
 		}
+		if column.ReferenceColumn != "" && column.ReferenceTable != "" {
+			if !db.tableExists(column.ReferenceTable) {
+				return "", fmt.Errorf("foreign key table %s does not exist", column.ReferenceTable)
+			}
+		}
+		table.addColumn(*column)
 	}
-
 	database.Tables[name] = table
 	err = database.saveToFileGob()
 	if err != nil {
