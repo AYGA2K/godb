@@ -1,8 +1,10 @@
 package database_test
 
 import (
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/AYGA2K/db/internal/database"
@@ -352,5 +354,89 @@ func TestPrimaryKeyAutoIncrement(t *testing.T) {
 	}
 	if !strings.Contains(res, `"id": 2`) {
 		t.Errorf("Expected result to contain id 2, got: %s", res)
+	}
+}
+
+func TestForeignKey(t *testing.T) {
+	defer cleanupTestDB()
+	db, err := database.NewDatabase("testdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
+	_, _ = db.Execute("CREATE TABLE posts (id INT, user_id INT FOREIGN KEY REFERENCES users(id) , title VARCHAR)")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (1, 'Alice')")
+	_, _ = db.Execute("INSERT INTO posts (id, user_id, title) VALUES (1, 1, 'Hello')")
+
+	res, err := db.Execute("SELECT * FROM posts where user_id = 1")
+	if err != nil {
+		t.Fatalf("Select with where error: %v", err)
+	}
+	if !strings.Contains(res, `"user_id": 1`) {
+		t.Errorf("Expected result to contain user_id 1, got: %s", res)
+	}
+}
+
+func TestSelectJoin(t *testing.T) {
+	defer cleanupTestDB()
+	db, err := database.NewDatabase("testdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
+	_, _ = db.Execute("CREATE TABLE posts (id INT, user_id INT FOREIGN KEY REFERENCES users(id), title VARCHAR)")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (1, 'Alice')")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (2, 'Bob')")
+	_, _ = db.Execute("INSERT INTO posts (id, user_id, title) VALUES (1, 1, 'Hello')")
+	_, _ = db.Execute("INSERT INTO posts (id, user_id, title) VALUES (2, 2, 'World')")
+
+	res, err := db.Execute("SELECT posts.title, users.name FROM posts JOIN users ON posts.user_id = users.id")
+
+	t.Log(res)
+
+	if err != nil {
+		t.Fatalf("Select with join error: %v", err)
+	}
+
+	if !strings.Contains(res, `"posts.title": "Hello"`) || !strings.Contains(res, `"users.name": "Alice"`) {
+		t.Errorf("Expected result to contain post 'Hello' by 'Alice', got: %s", res)
+	}
+	if !strings.Contains(res, `"posts.title": "World"`) || !strings.Contains(res, `"users.name": "Bob"`) {
+		t.Errorf("Expected result to contain post 'World' by 'Bob', got: %s", res)
+	}
+}
+
+func TestConcurrentInserts(t *testing.T) {
+	defer os.Remove("testdb_concurrent")
+
+	db, err := database.NewDatabase("testdb_concurrent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			name := fmt.Sprintf("User%d", i)
+			_, err := db.Execute(fmt.Sprintf("INSERT INTO users (id, name) VALUES (%d, '%s')", i, name))
+			if err != nil {
+				t.Errorf("Insert failed: %v", err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	res, err := db.Execute("SELECT * FROM users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 10; i++ {
+		if !strings.Contains(res, fmt.Sprintf(`"name": "User%d"`, i)) {
+			t.Errorf("Expected User%d in result, got: %s", i, res)
+		}
 	}
 }
