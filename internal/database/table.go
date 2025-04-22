@@ -46,9 +46,9 @@ func (t *Table) addRow(row Row) error {
 	return nil
 }
 
-func (t *Table) hasUnique() bool {
+func (t Table) columnExists(columnName string) bool {
 	for _, column := range t.Columns {
-		if column.HasConstraint(COLUMN_CONSTRAINT_UNIQUE) {
+		if column.Name == columnName {
 			return true
 		}
 	}
