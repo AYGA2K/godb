@@ -407,10 +407,33 @@ func TestSelectJoin(t *testing.T) {
 	}
 }
 
-func TestConcurrentInserts(t *testing.T) {
-	defer os.Remove("testdb_concurrent")
+func TestSelectLimit(t *testing.T) {
+	defer cleanupTestDB()
+	db, err := database.NewDatabase("testdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (1, 'Alice')")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (2, 'Bob')")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (3, 'Charlie')")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (4, 'David')")
 
-	db, err := database.NewDatabase("testdb_concurrent")
+	res, err := db.Execute(fmt.Sprintf("SELECT * FROM users LIMIT %d", 3))
+	if err != nil {
+		t.Fatalf("Select with limit error: %v", err)
+	}
+	if !strings.Contains(res, `"id": 1`) || !strings.Contains(res, `"id": 2`) || !strings.Contains(res, `"id": 3`) {
+		t.Errorf("Expected result to contain id 1, 2, 3, got: %s", res)
+	}
+	if strings.Contains(res, `"id": 4`) {
+		t.Errorf("Expected result to not contain id 4, got: %s", res)
+	}
+}
+
+func TestConcurrentInserts(t *testing.T) {
+	defer cleanupTestDB()
+	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
 	}

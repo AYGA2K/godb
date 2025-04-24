@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -64,7 +65,7 @@ func (db *Database) Execute(sql string) (string, error) {
 	// Basic SQL parsing
 	createRegex := regexp.MustCompile(`(?i)^CREATE\s+TABLE\s+(\w+)\s*\((.+)\)\s*$`)
 	insertRegex := regexp.MustCompile(`(?i)^INSERT\s+INTO\s+(\w+)\s*(?:\((.+?)\))?\s*VALUES\s*\((.+?)\)\s*$`)
-	selectRegex := regexp.MustCompile(`(?i)^SELECT\s+(.+?)\s+FROM\s+(\w+)(?:\s+(JOIN\s+.+?\s+ON\s+.+?))?(?:\s+WHERE\s+(.+?))?\s*$`)
+	selectRegex := regexp.MustCompile(`(?i)^SELECT\s+(.+?)\s+FROM\s+(\w+)(?:\s+(JOIN\s+.+?\s+ON\s+.+?))?(?:\s+WHERE\s+(.+?))?(?:\s+GROUP BY\s+(.+?))?(?:\s+ORDER BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?\s*$`)
 	deleteRegex := regexp.MustCompile(`(?i)^DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?\s*$`)
 	updateRegex := regexp.MustCompile(`(?i)^UPDATE\s+(\w+)\s+SET\s+(.+?)\s+WHERE\s+(.+?)\s*$`)
 	dropTableRegex := regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(\w+)\s*$`)
@@ -93,10 +94,16 @@ func (db *Database) Execute(sql string) (string, error) {
 	case selectRegex.MatchString(sql):
 		matches := selectRegex.FindStringSubmatch(sql)
 		columns := strings.Split(matches[1], ",")
+		// NOTE: FindStringSubmatch always returns a slice with len = 1 + number of capture groups.
+		// If a capture group doesn't match, its value will be an empty string (""),
+		// so accessing matches[3] or matches[4] is safe as long as the regex matched.
 		tableName := matches[2]
 		joinClause := matches[3]
 		whereClause := matches[4]
-		return db.Select(tableName, columns, whereClause, joinClause)
+		groupByClause := matches[5]
+		orderByClause := matches[6]
+		limitClause := matches[7]
+		return db.Select(tableName, columns, whereClause, joinClause, groupByClause, orderByClause, limitClause)
 	default:
 		return "", fmt.Errorf("unsupported SQL command")
 	}
@@ -205,7 +212,7 @@ func (db *Database) Delete(tableName string, whereClause string) (string, error)
 }
 
 // Select retrieves data from a table
-func (db *Database) Select(tableName string, columns []string, whereClause string, joinClause string) (string, error) {
+func (db *Database) Select(tableName string, columns []string, whereClause string, joinClause string, orderByClause string, groupByClause string, limitClause string) (string, error) {
 	// Get the main table
 	mainTable, err := db.getTable(tableName)
 	if err != nil {
@@ -229,10 +236,21 @@ func (db *Database) Select(tableName string, columns []string, whereClause strin
 						return "", fmt.Errorf("column %s not found", col)
 					}
 				}
+
+				if limitClause != "" {
+					limit, err := evaluateLimitClause(limitClause)
+					if err != nil {
+						return "", err
+					}
+					if limit > 0 && len(results) >= limit {
+						break
+					}
+				}
 				results = append(results, resultRow)
+
 			}
 		}
-	} else {
+	} else if joinClause != "" {
 		// Handle JOIN
 		joinTableName, joinCondition, err := parseJoinClause(joinClause)
 		if err != nil {
@@ -250,6 +268,7 @@ func (db *Database) Select(tableName string, columns []string, whereClause strin
 		}
 
 		// Perform the actual join
+	outer:
 		for _, mainRow := range mainTable.Rows {
 			for _, joinRow := range joinTable.Rows {
 				if mainRow[leftCol] == joinRow[rightCol] {
@@ -269,7 +288,7 @@ func (db *Database) Select(tableName string, columns []string, whereClause strin
 							} else if val, exists := combinedRow[col]; exists {
 								resultRow[col] = val
 							} else {
-								// Handle table-qualified columns (table.column)
+								// Handle table.column
 								if parts := strings.Split(col, "."); len(parts) == 2 {
 									tablePrefix := parts[0]
 									colName := parts[1]
@@ -286,6 +305,15 @@ func (db *Database) Select(tableName string, columns []string, whereClause strin
 									}
 								}
 								return "", fmt.Errorf("column %s not found", col)
+							}
+						}
+						if limitClause != "" {
+							limit, err := evaluateLimitClause(limitClause)
+							if err != nil {
+								return "", err
+							}
+							if limit > 0 && len(results) >= limit {
+								break outer
 							}
 						}
 						results = append(results, resultRow)
@@ -324,6 +352,17 @@ func (db *Database) evaluateWhere(row Row, whereClause string) bool {
 
 	// TODO: Add support for other operators (<, >, <=, >=, !=, LIKE, etc.)
 	return false
+}
+
+func evaluateLimitClause(limitClause string) (int, error) {
+	if limitClause != "" {
+		limit, err := strconv.Atoi(limitClause)
+		if err != nil {
+			return 0, fmt.Errorf("invalid limit clause: %v", err)
+		}
+		return limit, nil
+	}
+	return 0, nil
 }
 
 // Helper functions for join processing
