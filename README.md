@@ -7,7 +7,7 @@ A simple database with basic SQL support.
 ### Table Operations
 
 ```sql
--- Create table (basic types only)
+-- Create table 
 CREATE TABLE users (id INT, name VARCHAR)
 
 -- Drop table
