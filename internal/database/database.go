@@ -212,7 +212,7 @@ func (db *Database) Delete(tableName string, whereClause string) (string, error)
 }
 
 // Select retrieves data from a table
-func (db *Database) Select(tableName string, columns []string, whereClause string, joinClause string, orderByClause string, groupByClause string, limitClause string) (string, error) {
+func (db *Database) Select(tableName string, columns []string, whereClause string, joinClause string, groupByClause string, orderByClause string, limitClause string) (string, error) {
 	// Get the main table
 	mainTable, err := db.getTable(tableName)
 	if err != nil {
@@ -238,7 +238,7 @@ func (db *Database) Select(tableName string, columns []string, whereClause strin
 				}
 
 				if limitClause != "" {
-					limit, err := evaluateLimitClause(limitClause)
+					limit, err := parseLimitClause(limitClause)
 					if err != nil {
 						return "", err
 					}
@@ -308,7 +308,7 @@ func (db *Database) Select(tableName string, columns []string, whereClause strin
 							}
 						}
 						if limitClause != "" {
-							limit, err := evaluateLimitClause(limitClause)
+							limit, err := parseLimitClause(limitClause)
 							if err != nil {
 								return "", err
 							}
@@ -321,6 +321,27 @@ func (db *Database) Select(tableName string, columns []string, whereClause strin
 				}
 			}
 		}
+	}
+	if len(results) == 0 {
+		return "", fmt.Errorf("no results found")
+	}
+	if orderByClause != "" {
+		orderByCol, orderByDir, err := parseOrderByClause(orderByClause)
+		if err != nil {
+			return "", err
+		}
+		table, err := db.getTable(tableName)
+		if err != nil {
+			return "", err
+		}
+		if !table.columnExists(orderByCol) {
+			return "", fmt.Errorf("column %s does not exist", orderByCol)
+		}
+		col, err := table.GetColumn(orderByCol)
+		if err != nil {
+			return "", err
+		}
+		results = sortRows(results, col, orderByDir)
 	}
 
 	jsonData, err := json.MarshalIndent(results, "", "  ")
@@ -354,7 +375,32 @@ func (db *Database) evaluateWhere(row Row, whereClause string) bool {
 	return false
 }
 
-func evaluateLimitClause(limitClause string) (int, error) {
+func parseOrderByClause(orderByClause string) (string, string, error) {
+	if orderByClause == "" {
+		return "", "", fmt.Errorf("empty order by clause")
+	}
+
+	parts := strings.Fields(strings.TrimSpace(orderByClause))
+	if len(parts) == 0 {
+		return "", "", fmt.Errorf("invalid order by clause")
+	}
+
+	col := parts[0]
+	direction := "ASC" // Default direction
+
+	if len(parts) > 1 {
+		upperDir := strings.ToUpper(parts[1])
+		if upperDir == "ASC" || upperDir == "DESC" {
+			direction = upperDir
+		} else {
+			return "", "", fmt.Errorf("invalid order by direction")
+		}
+	}
+
+	return col, direction, nil
+}
+
+func parseLimitClause(limitClause string) (int, error) {
 	if limitClause != "" {
 		limit, err := strconv.Atoi(limitClause)
 		if err != nil {

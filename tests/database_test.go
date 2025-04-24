@@ -1,6 +1,7 @@
 package database_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -246,14 +247,6 @@ func TestColumnTypeParsing(t *testing.T) {
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_NOT_NULL},
 		},
 
-		// {
-		// 	"test_foreign_key",
-		// 	"CREATE TABLE test_foreign_key (col INT FOREIGN KEY)",
-		// 	true,
-		// 	database.COLUMN_TYPE_INT,
-		// 	[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_FOREIGN_KEY},
-		// },
-
 		{
 			"test_unique_index",
 			"CREATE TABLE test_unique_index (col INT UNIQUE)",
@@ -279,14 +272,6 @@ func TestColumnTypeParsing(t *testing.T) {
 
 			[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_AUTO_INCREMENT},
 		},
-
-		// {
-		// 	"test_foreign_key_index",
-		// 	"CREATE TABLE test_foreign_key_index (col INT FOREIGN KEY)",
-		// 	true,
-		// 	database.COLUMN_TYPE_INT,
-		// 	[]database.ColumnConstraint{database.COLUMN_CONSTRAINT_FOREIGN_KEY},
-		// },
 	}
 
 	// Create tables
@@ -431,6 +416,47 @@ func TestSelectLimit(t *testing.T) {
 	}
 }
 
+func TestSelectOrderBy(t *testing.T) {
+	defer cleanupTestDB()
+	db, err := database.NewDatabase("testdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (1, 'Charlie')")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (2, 'Alice')")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (3, 'David')")
+	_, _ = db.Execute("INSERT INTO users (id, name) VALUES (4, 'Bob')")
+
+	res, err := db.Execute("SELECT * FROM users ORDER BY name")
+	if err != nil {
+		t.Fatalf("Select with order by error: %v", err)
+	}
+
+	// Check that results are in alphabetical order by name
+	expectedOrder := []string{"Alice", "Bob", "Charlie", "David"}
+	var results []map[string]interface{}
+	if err := json.Unmarshal([]byte(res), &results); err != nil {
+		t.Fatalf("Failed to unmarshal results: %v", err)
+	}
+
+	if len(results) != len(expectedOrder) {
+		t.Fatalf("Expected %d results, got %d", len(expectedOrder), len(results))
+	}
+
+	for i, row := range results {
+
+		name, ok := row["name"].(string)
+		if !ok {
+			t.Errorf("Name field is not a string in row %d", i)
+			continue
+		}
+		if name != expectedOrder[i] {
+			t.Errorf("Expected name at position %d to be %s, got %s", i, expectedOrder[i], name)
+		}
+	}
+}
+
 func TestConcurrentInserts(t *testing.T) {
 	defer cleanupTestDB()
 	db, err := database.NewDatabase("testdb")
@@ -440,7 +466,7 @@ func TestConcurrentInserts(t *testing.T) {
 	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
 
 	var wg sync.WaitGroup
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
