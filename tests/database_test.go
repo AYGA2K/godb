@@ -435,7 +435,7 @@ func TestSelectOrderBy(t *testing.T) {
 
 	// Check that results are in alphabetical order by name
 	expectedOrder := []string{"Alice", "Bob", "Charlie", "David"}
-	var results []map[string]interface{}
+	var results []map[string]any
 	if err := json.Unmarshal([]byte(res), &results); err != nil {
 		t.Fatalf("Failed to unmarshal results: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestConcurrentInserts(t *testing.T) {
 	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
 
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
