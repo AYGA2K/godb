@@ -11,18 +11,18 @@ import (
 	"github.com/AYGA2K/db/internal/database"
 )
 
-func cleanupTestDB() {
-	os.Remove("testdb.gob")
+func cleanupTestDB(name string) {
+	os.Remove(name + ".gob")
 }
 
 func TestCreateTable(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
+	res, err := db.Execute("CREATE TABLE users (id INT, name VARCHAR ,birthdate DATE)")
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -32,17 +32,17 @@ func TestCreateTable(t *testing.T) {
 }
 
 func TestInsertAndSelect(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
+	_, err = db.Execute("CREATE TABLE users (id INT, name VARCHAR, birthdate DATE)")
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := db.Execute("INSERT INTO users (id, name) VALUES (1, 'Alice')")
+	res, err := db.Execute("INSERT INTO users (id, name, birthdate) VALUES (1, 'Alice','1990-01-01')")
 	if err != nil {
 		t.Fatalf("Insert error: %v", err)
 	}
@@ -54,13 +54,13 @@ func TestInsertAndSelect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Select error: %v", err)
 	}
-	if !strings.Contains(selectRes, `"name": "Alice"`) || !strings.Contains(selectRes, `"id": 1`) {
+	if !strings.Contains(selectRes, `"name": "Alice"`) || !strings.Contains(selectRes, `"id": 1`) || !strings.Contains(selectRes, `"birthdate": "1990-01-01"`) {
 		t.Errorf("Unexpected select result: %s", selectRes)
 	}
 }
 
 func TestWhereClause(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
@@ -80,7 +80,7 @@ func TestWhereClause(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
@@ -107,7 +107,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
@@ -136,7 +136,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDropTable(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
@@ -160,7 +160,7 @@ func TestDropTable(t *testing.T) {
 }
 
 func TestColumnTypeParsing(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
@@ -323,7 +323,7 @@ func TestColumnTypeParsing(t *testing.T) {
 }
 
 func TestPrimaryKeyAutoIncrement(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
@@ -343,7 +343,7 @@ func TestPrimaryKeyAutoIncrement(t *testing.T) {
 }
 
 func TestForeignKey(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
@@ -363,7 +363,7 @@ func TestForeignKey(t *testing.T) {
 }
 
 func TestSelectJoin(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
@@ -377,9 +377,6 @@ func TestSelectJoin(t *testing.T) {
 	_, _ = db.Execute("INSERT INTO posts (id, user_id, title) VALUES (2, 2, 'World')")
 
 	res, err := db.Execute("SELECT posts.title, users.name FROM posts JOIN users ON posts.user_id = users.id")
-
-	t.Log(res)
-
 	if err != nil {
 		t.Fatalf("Select with join error: %v", err)
 	}
@@ -393,7 +390,7 @@ func TestSelectJoin(t *testing.T) {
 }
 
 func TestSelectLimit(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
@@ -417,7 +414,7 @@ func TestSelectLimit(t *testing.T) {
 }
 
 func TestSelectOrderBy(t *testing.T) {
-	defer cleanupTestDB()
+	defer cleanupTestDB("testdb")
 	db, err := database.NewDatabase("testdb")
 	if err != nil {
 		t.Fatal(err)
@@ -435,7 +432,7 @@ func TestSelectOrderBy(t *testing.T) {
 
 	// Check that results are in alphabetical order by name
 	expectedOrder := []string{"Alice", "Bob", "Charlie", "David"}
-	var results []map[string]any
+	var results []map[string]interface{}
 	if err := json.Unmarshal([]byte(res), &results); err != nil {
 		t.Fatalf("Failed to unmarshal results: %v", err)
 	}
@@ -457,16 +454,63 @@ func TestSelectOrderBy(t *testing.T) {
 	}
 }
 
-func TestConcurrentInserts(t *testing.T) {
-	defer cleanupTestDB()
+func TestComparisonOperators(t *testing.T) {
+	defer cleanupTestDB("testdb")
+
 	db, err := database.NewDatabase("testdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR, age INT, birthdate DATE)")
+	_, _ = db.Execute("INSERT INTO users (id, name, age, birthdate) VALUES (1, 'Alice', 25,'2000-01-01')")
+	_, _ = db.Execute("INSERT INTO users (id, name, age,birthdate) VALUES (2, 'Bob', 30,'1995-03-20')")
+	_, _ = db.Execute("INSERT INTO users (id, name, age,birthdate) VALUES (3, 'Charlie', 35,'1990-03-12')")
+	_, _ = db.Execute("INSERT INTO users (id, name, age,birthdate) VALUES (4, 'David', 40,'1985-02-03')")
+
+	tests := []struct {
+		name     string
+		query    string
+		expected []int // expected number of results
+	}{
+		{"Less than", "SELECT * FROM users WHERE age < 30", []int{1}},
+		{"Greater than", "SELECT * FROM users WHERE age > 30", []int{3, 4}},
+		{"Less than or equal", "SELECT * FROM users WHERE age <= 30", []int{1, 2}},
+		{"Greater than or equal", "SELECT * FROM users WHERE age >= 30", []int{2, 3, 4}},
+		{"Not equal", "SELECT * FROM users WHERE age != 30", []int{1, 3, 4}},
+		{"String less than", "SELECT * FROM users WHERE name < 'Bob'", []int{1}},
+		{"String greater than", "SELECT * FROM users WHERE name > 'Bob'", []int{3, 4}},
+		{"Strign Like", "SELECT * FROM users WHERE name LIKE 'li'", []int{1, 3}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := db.Execute(tt.query)
+			if err != nil {
+				t.Fatalf("Query failed: %v", err)
+			}
+
+			var results []map[string]interface{}
+			if err := json.Unmarshal([]byte(res), &results); err != nil {
+				t.Fatalf("Failed to unmarshal results: %v", err)
+			}
+
+			if len(results) != len(tt.expected) {
+				t.Errorf("Expected %d results, got %d", tt.expected, len(results))
+			}
+		})
+	}
+}
+
+func TestConcurrentInserts(t *testing.T) {
+	defer cleanupTestDB("testdbconcurrent")
+	db, err := database.NewDatabase("testdbconcurrent")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, _ = db.Execute("CREATE TABLE users (id INT, name VARCHAR)")
 
 	var wg sync.WaitGroup
-	for i := range 10 {
+	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

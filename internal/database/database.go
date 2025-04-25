@@ -6,12 +6,21 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+func init() {
+	gob.Register(Row{})
+	gob.Register(Column{})
+	gob.Register(Table{})
+	gob.Register(Database{})
+	gob.Register(time.Time{})
+}
 
 type Database struct {
 	Name   string
@@ -65,7 +74,7 @@ func (db *Database) Execute(sql string) (string, error) {
 	// Basic SQL parsing
 	createRegex := regexp.MustCompile(`(?i)^CREATE\s+TABLE\s+(\w+)\s*\((.+)\)\s*$`)
 	insertRegex := regexp.MustCompile(`(?i)^INSERT\s+INTO\s+(\w+)\s*(?:\((.+?)\))?\s*VALUES\s*\((.+?)\)\s*$`)
-	selectRegex := regexp.MustCompile(`(?i)^SELECT\s+(.+?)\s+FROM\s+(\w+)(?:\s+(JOIN\s+.+?\s+ON\s+.+?))?(?:\s+WHERE\s+(.+?))?(?:\s+GROUP BY\s+(.+?))?(?:\s+ORDER BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?\s*$`)
+	selectRegex := regexp.MustCompile(`(?i)^SELECT\s+(.+?)\s+FROM\s+(\w+)(?:\s+(JOIN\s+.+?\s+ON\s+.+?))?(?:\s+WHERE\s+(.+?))?(?:\s+ORDER BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?\s*$`)
 	deleteRegex := regexp.MustCompile(`(?i)^DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?\s*$`)
 	updateRegex := regexp.MustCompile(`(?i)^UPDATE\s+(\w+)\s+SET\s+(.+?)\s+WHERE\s+(.+?)\s*$`)
 	dropTableRegex := regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(\w+)\s*$`)
@@ -100,10 +109,9 @@ func (db *Database) Execute(sql string) (string, error) {
 		tableName := matches[2]
 		joinClause := matches[3]
 		whereClause := matches[4]
-		groupByClause := matches[5]
-		orderByClause := matches[6]
-		limitClause := matches[7]
-		return db.Select(tableName, columns, whereClause, joinClause, groupByClause, orderByClause, limitClause)
+		orderByClause := matches[5]
+		limitClause := matches[6]
+		return db.Select(tableName, columns, whereClause, joinClause, orderByClause, limitClause)
 	default:
 		return "", fmt.Errorf("unsupported SQL command")
 	}
@@ -212,7 +220,7 @@ func (db *Database) Delete(tableName string, whereClause string) (string, error)
 }
 
 // Select retrieves data from a table
-func (db *Database) Select(tableName string, columns []string, whereClause string, joinClause string, groupByClause string, orderByClause string, limitClause string) (string, error) {
+func (db *Database) Select(tableName string, columns []string, whereClause string, joinClause string, orderByClause string, limitClause string) (string, error) {
 	// Get the main table
 	mainTable, err := db.getTable(tableName)
 	if err != nil {
@@ -357,22 +365,107 @@ func (db *Database) evaluateWhere(row Row, whereClause string) bool {
 		return true
 	}
 
-	// Handle simple equality conditions (column = value)
-	if strings.Contains(whereClause, "=") {
-		parts := strings.SplitN(whereClause, "=", 2)
-		col := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
-		val = strings.Trim(val, "'\"")
+	// Check for multi-character operators (<=, >=, !=, =) first
+	operators := []string{"<=", ">=", "!=", "=", "<", ">", "LIKE"}
+	var op string
+	var parts []string
 
-		rowVal, exists := row[col]
-		if !exists {
-			return false
+	// Find which operator is being used
+	for _, operator := range operators {
+		if strings.Contains(whereClause, operator) {
+			op = operator
+			parts = strings.SplitN(whereClause, operator, 2)
+			break
 		}
-		return fmt.Sprint(rowVal) == val
 	}
 
-	// TODO: Add support for other operators (<, >, <=, >=, !=, LIKE, etc.)
-	return false
+	if len(parts) != 2 {
+		return false
+	}
+
+	col := strings.TrimSpace(parts[0])
+	val := strings.TrimSpace(parts[1])
+	val = strings.Trim(val, "'\"")
+
+	rowVal, exists := row[col]
+	if !exists {
+		return false
+	}
+
+	// Convert both values to string for comparison
+	rowStr := fmt.Sprint(rowVal)
+	valStr := val
+
+	switch op {
+	case "=":
+		return rowStr == valStr
+	case "!=":
+		return rowStr != valStr
+	case "<":
+		return compareValues(rowVal, valStr) < 0
+	case ">":
+		return compareValues(rowVal, valStr) > 0
+	case "<=":
+		return compareValues(rowVal, valStr) <= 0
+	case ">=":
+		return compareValues(rowVal, valStr) >= 0
+	case "LIKE":
+		return strings.Contains(rowStr, valStr)
+	default:
+		return false
+	}
+}
+
+// Helper function to compare values with proper type handling
+func compareValues(rowVal interface{}, valStr string) int {
+	// Try to convert both to numbers first
+	if rowNum, valNum, err := convertToNumbers(rowVal, valStr); err == nil {
+		if rowNum == valNum {
+			return 0
+		} else if rowNum < valNum {
+			return -1
+		} else {
+			return 1
+		}
+	}
+
+	// Fall back to string comparison
+	rowStr := fmt.Sprint(rowVal)
+	if rowStr == valStr {
+		return 0
+	} else if rowStr < valStr {
+		return -1
+	} else {
+		return 1
+	}
+}
+
+// Helper function to convert values to numbers if possible
+func convertToNumbers(rowVal interface{}, valStr string) (float64, float64, error) {
+	var rowNum, valNum float64
+	var err error
+
+	// Convert row value
+	switch v := rowVal.(type) {
+	case int, int8, int16, int32, int64:
+		rowNum = float64(reflect.ValueOf(v).Int())
+	case uint, uint8, uint16, uint32, uint64:
+		rowNum = float64(reflect.ValueOf(v).Uint())
+	case float32:
+		rowNum = float64(v)
+	case float64:
+		rowNum = v
+	default:
+		return 0, 0, fmt.Errorf("not a number")
+	}
+
+	// Convert comparison value
+	valNum, err = strconv.ParseFloat(valStr, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return rowNum, valNum, nil
 }
 
 func parseOrderByClause(orderByClause string) (string, string, error) {
@@ -523,30 +616,32 @@ func columnTypeConversion(colType ColumnType, val string) (any, error) {
 		var num float64
 		_, err := fmt.Sscanf(val, "%f", &num)
 		if err != nil {
-			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
+			return nil, fmt.Errorf("invalid double value for column type %s", colType)
 		}
 		return num, nil
 	case COLUMN_TYPE_FLOAT:
 		var num float32
 		_, err := fmt.Sscanf(val, "%f", &num)
 		if err != nil {
-			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
+			return nil, fmt.Errorf("invalid float value for column type %s", colType)
 		}
 		return num, nil
 	case COLUMN_TYPE_BOOL:
 		var boolean bool
 		_, err := fmt.Sscanf(val, "%t", &boolean)
 		if err != nil {
-			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
+			return nil, fmt.Errorf("invalid boolean value for column type %s", colType)
 		}
 		return boolean, nil
 	case COLUMN_TYPE_DATE:
 		const layout = "2006-01-02"
+		val = strings.Trim(val, "'\"")
 		parsed_Date, err := time.Parse(layout, val)
 		if err != nil {
-			return nil, fmt.Errorf("invalid integer value for column type %s", colType)
+			return nil, fmt.Errorf("invalid date value for column type %s", colType)
 		}
-		return parsed_Date, nil
+		formatted_Date := parsed_Date.Format(layout)
+		return formatted_Date, nil
 	default:
 		return val, nil
 	}
